@@ -1,0 +1,26 @@
+# Pasta de trabalho local (conteúdo privado / não publicar)
+ignorar_git/
+
+# Dependências
+node_modules/
+
+# Variáveis de ambiente e segredos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Saídas do Gemini e métricas geradas localmente (podem conter dados de projetos privados)
+docs/gemini-output/
+tests/**/result-*.json
+
+# Logs
+*.log
+logs/
+
+# Artefatos de SO / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

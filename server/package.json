@@ -1,0 +1,11 @@
+{
+  "name": "gemini-bridge",
+  "version": "3.1.0",
+  "description": "Servidor MCP local que delega leitura/pesquisa/análise pesada ao Gemini CLI, reduzindo o consumo de tokens do Claude Code.",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}
