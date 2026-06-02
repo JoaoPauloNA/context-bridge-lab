@@ -2,17 +2,23 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { spawn } from 'child_process'
+import { spawn, execFile } from 'child_process'
 import { writeFile, mkdir, appendFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { dirname, resolve, relative, isAbsolute, join, delimiter, basename } from 'path'
+import { promisify } from 'util'
 import process from 'process'
+
+const execFileAsync = promisify(execFile)
 
 const INLINE_CAP = 4000
 const PREVIEW_CAP = 600
 const DEFAULT_TIMEOUT_MS = 300_000
 
 const ALLOWED_APPROVAL_MODES = new Set(['plan', 'default', 'auto_edit', 'yolo'])
+
+// O modo "yolo" (Gemini executa sem confirmacao) so e liberado com ALLOW_GEMINI_YOLO=1.
+const YOLO_ALLOWED = process.env.ALLOW_GEMINI_YOLO === '1'
 
 function stripAnsi(str) {
   return String(str || '')
@@ -52,7 +58,10 @@ async function recordMetrics(workDir, record) {
 }
 
 function makeTaskId(mode, task_type, startedAt) {
-  const stamp = startedAt.toISOString().replace(/[-:T]/g, '').replace(/\.\d+Z$/, '')
+  const stamp = startedAt
+    .toISOString()
+    .replace(/[-:T]/g, '')
+    .replace(/\.\d+Z$/, '')
   return `${mode}-${task_type}-${stamp}`
 }
 
@@ -68,6 +77,76 @@ function deriveChangedFiles(briefing) {
   return { created, modified }
 }
 
+function uniq(arr) {
+  return [...new Set((arr || []).filter(Boolean))]
+}
+
+// Evidencia real de mudancas via git (best-effort). Retorna null se nao for repo git.
+async function gitPorcelain(cwd) {
+  try {
+    const { stdout } = await execFileAsync('git', ['status', '--porcelain'], {
+      cwd,
+      windowsHide: true,
+      maxBuffer: 4 * 1024 * 1024
+    })
+    return parsePorcelain(stdout)
+  } catch {
+    return null
+  }
+}
+
+function parsePorcelain(stdout) {
+  const map = new Map()
+  for (const line of String(stdout || '').split('\n')) {
+    if (!line.trim()) continue
+    const code = line.slice(0, 2)
+    let p = line.slice(3).trim()
+    if (p.includes(' -> ')) p = p.split(' -> ').pop().trim() // renomeado
+    map.set(p, code)
+  }
+  return map
+}
+
+// Compara dois snapshots porcelain e classifica os arquivos realmente alterados.
+function diffPorcelain(before, after) {
+  const created = []
+  const modified = []
+  const deleted = []
+  if (!after) return { created, modified, deleted }
+  for (const [p, code] of after) {
+    if (before && before.get(p) === code) continue // sem mudanca desde o snapshot inicial
+    if (code.includes('?') || code.includes('A')) created.push(p)
+    else if (code.includes('D')) deleted.push(p)
+    else if (code.includes('M') || code.includes('R')) modified.push(p)
+    else created.push(p)
+  }
+  return { created: uniq(created), modified: uniq(modified), deleted: uniq(deleted) }
+}
+
+async function gitDiffEvidence(cwd) {
+  const evidence = { name_only: [], stat: null }
+  try {
+    const { stdout } = await execFileAsync('git', ['diff', '--name-only'], {
+      cwd,
+      windowsHide: true,
+      maxBuffer: 4 * 1024 * 1024
+    })
+    evidence.name_only = stdout
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  } catch {}
+  try {
+    const { stdout } = await execFileAsync('git', ['diff', '--stat'], {
+      cwd,
+      windowsHide: true,
+      maxBuffer: 4 * 1024 * 1024
+    })
+    evidence.stat = stdout.trim().slice(0, 4000) || null
+  } catch {}
+  return evidence
+}
+
 function resolveGeminiInvocation() {
   if (process.platform !== 'win32') {
     return { command: 'gemini', prefixArgs: [], useShell: false }
@@ -79,7 +158,17 @@ function resolveGeminiInvocation() {
   const jsCandidates = []
   if (process.env.GEMINI_CLI_JS) jsCandidates.push(process.env.GEMINI_CLI_JS)
   if (process.env.APPDATA) {
-    jsCandidates.push(join(process.env.APPDATA, 'npm', 'node_modules', '@google', 'gemini-cli', 'bundle', 'gemini.js'))
+    jsCandidates.push(
+      join(
+        process.env.APPDATA,
+        'npm',
+        'node_modules',
+        '@google',
+        'gemini-cli',
+        'bundle',
+        'gemini.js'
+      )
+    )
   }
   for (const dir of (process.env.PATH || '').split(delimiter)) {
     if (!dir) continue
@@ -188,7 +277,12 @@ ${prompt}
 `.trim()
 }
 
-function buildPrompt({ prompt, task_type = 'analysis', mode = 'research', user_language = 'pt-BR' }) {
+function buildPrompt({
+  prompt,
+  task_type = 'analysis',
+  mode = 'research',
+  user_language = 'pt-BR'
+}) {
   if (mode === 'development') {
     return buildDevelopmentPrompt({ prompt, task_type, user_language })
   }
@@ -196,7 +290,9 @@ function buildPrompt({ prompt, task_type = 'analysis', mode = 'research', user_l
 }
 
 function extractBriefing(output) {
-  const match = output.match(/<<<CLAUDE_BRIEFING_JSON>>>\s*([\s\S]*?)\s*<<<END_CLAUDE_BRIEFING_JSON>>>/)
+  const match = output.match(
+    /<<<CLAUDE_BRIEFING_JSON>>>\s*([\s\S]*?)\s*<<<END_CLAUDE_BRIEFING_JSON>>>/
+  )
   if (!match) return null
 
   const raw = match[1].trim()
@@ -233,15 +329,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         properties: {
           prompt: {
             type: 'string',
-            description: 'Tarefa para o Gemini. Pode referenciar arquivos e pastas relativos ao projeto.'
+            description:
+              'Tarefa para o Gemini. Pode referenciar arquivos e pastas relativos ao projeto.'
           },
           mode: {
             type: 'string',
-            description: 'Modo operacional: research (read-only, default) ou development (pode editar arquivos).'
+            description:
+              'Modo operacional: research (read-only, default) ou development (pode editar arquivos).'
           },
           task_type: {
             type: 'string',
-            description: 'Tipo da tarefa: analysis, research, bug_triage, architecture_review, docs, quick, feature, refactor, test.'
+            description:
+              'Tipo da tarefa: analysis, research, bug_triage, architecture_review, docs, quick, feature, refactor, test.'
           },
           output_file: {
             type: 'string',
@@ -257,7 +356,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           approval_mode: {
             type: 'string',
-            description: 'Modo do Gemini CLI: plan, default, auto_edit, yolo. Default: plan.'
+            description:
+              'Modo do Gemini CLI: plan, default, auto_edit, yolo. Default: plan (research) / auto_edit (development). ' +
+              'yolo só é permitido se ALLOW_GEMINI_YOLO=1 estiver no ambiente.'
           },
           timeout_ms: {
             type: 'number',
@@ -269,7 +370,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           task_id: {
             type: 'string',
-            description: 'Identificador da tarefa para as métricas. Se omitido, é gerado automaticamente.'
+            description:
+              'Identificador da tarefa para as métricas. Se omitido, é gerado automaticamente.'
           },
           project: {
             type: 'string',
@@ -277,7 +379,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           record_metrics: {
             type: 'boolean',
-            description: 'Grava métricas automaticamente em docs/gemini-output/_metrics/gemini-runs.jsonl. Default: true.'
+            description:
+              'Grava métricas automaticamente em docs/gemini-output/_metrics/gemini-runs.jsonl. Default: true.'
           }
         },
         required: ['prompt']
@@ -303,10 +406,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [
         {
           type: 'text',
-          text: JSON.stringify({
-            cwd: getProjectDir(args.cwd),
-            CLAUDE_PROJECT_DIR: process.env.CLAUDE_PROJECT_DIR || null
-          }, null, 2)
+          text: JSON.stringify(
+            {
+              cwd: getProjectDir(args.cwd),
+              CLAUDE_PROJECT_DIR: process.env.CLAUDE_PROJECT_DIR || null
+            },
+            null,
+            2
+          )
         }
       ]
     }
@@ -345,12 +452,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     throw new Error(`approval_mode inválido: ${effectiveApprovalMode}`)
   }
 
+  if (effectiveApprovalMode === 'yolo' && !YOLO_ALLOWED) {
+    throw new Error(
+      'approval_mode "yolo" está desabilitado por segurança. ' +
+        'Defina a variável de ambiente ALLOW_GEMINI_YOLO=1 para habilitá-lo.'
+    )
+  }
+
   const workDir = getProjectDir(cwd)
   const finalPrompt = buildPrompt({ prompt, task_type, mode, user_language })
 
   const startedAt = new Date()
   const finalTaskId = task_id || makeTaskId(mode, task_type, startedAt)
   const projectName = project || basename(resolve(workDir))
+
+  // Snapshot do git ANTES da execucao (evidencia real de mudancas).
+  const gitBefore = await gitPorcelain(workDir)
 
   let output
   try {
@@ -377,7 +494,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       })
     }
     return {
-      content: [{ type: 'text', text: `[gemini-bridge ERROR] ${err.message}${metricsPath ? `\n[metrics] registrado em ${metricsPath}` : ''}` }],
+      content: [
+        {
+          type: 'text',
+          text: `[gemini-bridge ERROR] ${err.message}${metricsPath ? `\n[metrics] registrado em ${metricsPath}` : ''}`
+        }
+      ],
       isError: true
     }
   }
@@ -401,8 +523,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   const finishedAt = new Date()
   const durationSeconds = Math.round((finishedAt - startedAt) / 1000)
-  const { created: filesCreated, modified: filesModified } = deriveChangedFiles(briefing)
+
+  // Evidencia real de mudancas via git (preferida); briefing do Gemini como complemento.
+  const gitAfter = await gitPorcelain(workDir)
+  const gitChanges = diffPorcelain(gitBefore, gitAfter)
+  const gitAvailable = gitAfter !== null
+  const gitDiff = gitAvailable ? await gitDiffEvidence(workDir) : { name_only: [], stat: null }
+
+  const declared = deriveChangedFiles(briefing)
+  const filesCreated = uniq([...gitChanges.created, ...declared.created])
+  const filesModified = uniq([...gitChanges.modified, ...declared.modified])
+  const filesDeleted = uniq(gitChanges.deleted)
   const status = briefing && !briefing.parse_error ? 'success' : 'partial'
+
+  const gitEvidence = {
+    available: gitAvailable,
+    created: gitChanges.created,
+    modified: gitChanges.modified,
+    deleted: gitChanges.deleted,
+    diff_name_only: gitDiff.name_only,
+    diff_stat: gitDiff.stat
+  }
 
   let metricsPath = null
   if (record_metrics) {
@@ -418,6 +559,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       duration_seconds: durationSeconds,
       files_created: filesCreated,
       files_modified: filesModified,
+      files_deleted: filesDeleted,
+      files_declared_by_gemini: {
+        created: declared.created,
+        modified: declared.modified
+      },
+      git_evidence: gitEvidence,
       review_required: true,
       output_file: output_file || null,
       summary_file: summary_file || null,
@@ -440,6 +587,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     summary_file: summaryAbsPath,
     metrics_file: metricsPath,
     total_chars: output.length,
+    files_created: filesCreated,
+    files_modified: filesModified,
+    files_deleted: filesDeleted,
+    git_evidence: gitEvidence,
     briefing,
     preview: output.slice(0, PREVIEW_CAP)
   }
@@ -450,9 +601,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   }
 
-  const safe = output.length > INLINE_CAP
-    ? output.slice(0, INLINE_CAP) + `\n\n...[${output.length - INLINE_CAP} chars omitidos — use output_file]`
-    : output
+  const safe =
+    output.length > INLINE_CAP
+      ? output.slice(0, INLINE_CAP) +
+        `\n\n...[${output.length - INLINE_CAP} chars omitidos — use output_file]`
+      : output
 
   return {
     content: [{ type: 'text', text: safe }]
@@ -474,15 +627,19 @@ function runGemini(prompt, cwd, approvalMode, timeoutMs) {
     let stdout = ''
     let stderr = ''
 
-    child.stdout.on('data', d => { stdout += d.toString() })
-    child.stderr.on('data', d => { stderr += d.toString() })
+    child.stdout.on('data', (d) => {
+      stdout += d.toString()
+    })
+    child.stderr.on('data', (d) => {
+      stderr += d.toString()
+    })
 
     const timer = setTimeout(() => {
       child.kill()
       reject(new Error(`Timeout após ${Math.round(timeoutMs / 1000)}s`))
     }, timeoutMs)
 
-    child.on('close', code => {
+    child.on('close', (code) => {
       clearTimeout(timer)
 
       const cleanStdout = stripAnsi(stdout)
@@ -496,7 +653,7 @@ function runGemini(prompt, cwd, approvalMode, timeoutMs) {
       resolvePromise(cleanStdout || cleanStderr)
     })
 
-    child.on('error', err => {
+    child.on('error', (err) => {
       clearTimeout(timer)
       reject(err)
     })

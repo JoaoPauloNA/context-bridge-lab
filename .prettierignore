@@ -1,0 +1,8 @@
+ignorar_git/
+node_modules/
+server/node_modules/
+package-lock.json
+server/package-lock.json
+docs/gemini-output/
+**/*.ps1
+**/*.sh

@@ -46,11 +46,11 @@ flowchart TD
     C --> U
 ```
 
-| Camada | Responsabilidade | Implementação |
-|---|---|---|
-| **Claude** | Classificar, delegar, revisar, decidir, gerar handoff | Política em `CLAUDE.md` |
-| **MCP Bridge** | Executar o Gemini, filtrar contexto, registrar métricas | `server/index.js` |
-| **Gemini** | Ler, analisar, pesquisar, documentar, implementar (apoio) | Gemini CLI (`gemini_run`) |
+| Camada         | Responsabilidade                                          | Implementação             |
+| -------------- | --------------------------------------------------------- | ------------------------- |
+| **Claude**     | Classificar, delegar, revisar, decidir, gerar handoff     | Política em `CLAUDE.md`   |
+| **MCP Bridge** | Executar o Gemini, filtrar contexto, registrar métricas   | `server/index.js`         |
+| **Gemini**     | Ler, analisar, pesquisar, documentar, implementar (apoio) | Gemini CLI (`gemini_run`) |
 
 Regra fundamental: **Claude decide. Gemini executa. MCP registra.**
 
@@ -66,20 +66,21 @@ Detalhes em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 - **Gemini — motor de contexto:** lê muitos arquivos, mapeia projetos, pesquisa e gera relatórios;
   em modo de apoio, implementa tarefas simples. Somente-leitura por padrão.
 - **MCP Bridge — execução:** recebe as chamadas de ferramenta, executa o Gemini, devolve briefing
-  + metadados (não o material bruto) e grava métricas automaticamente.
+  - metadados (não o material bruto) e grava métricas automaticamente.
 
 ---
 
 ## Modos de operação
 
-| Modo | O que o Gemini faz | `approval_mode` padrão | Uso típico |
-|---|---|---|---|
-| **research** | Somente leitura: análise, pesquisa, documentação, mapeamento | `plan` | análise de repositório, pesquisa técnica, leitura de logs |
-| **development** | Pode criar/editar arquivos para implementar a tarefa | `auto_edit` | frontend simples, CRUD, testes, protótipos |
+| Modo            | O que o Gemini faz                                           | `approval_mode` padrão | Uso típico                                                |
+| --------------- | ------------------------------------------------------------ | ---------------------- | --------------------------------------------------------- |
+| **research**    | Somente leitura: análise, pesquisa, documentação, mapeamento | `plan`                 | análise de repositório, pesquisa técnica, leitura de logs |
+| **development** | Pode criar/editar arquivos para implementar a tarefa         | `auto_edit`            | frontend simples, CRUD, testes, protótipos                |
 
 Em ambos os modos, o **Claude sempre revisa** antes de aprovar.
 
 ### Quando usar o Gemini
+
 - Análise de repositório grande e mapeamento de estrutura.
 - Leitura de logs e documentação extensos.
 - Pesquisa técnica e comparação de requisitos × implementação.
@@ -87,11 +88,45 @@ Em ambos os modos, o **Claude sempre revisa** antes de aprovar.
 - Desenvolvimento **simples** (ciente de que a economia de tokens é pequena nesses casos).
 
 ### Quando NÃO usar o Gemini
+
 - Decisões de arquitetura.
 - Segurança, autenticação, autorização e criptografia.
 - Correção de bugs críticos.
 - Revisão final e decisões técnicas finais.
 - Geração de **código pequeno** apenas para economizar tokens — o ganho não compensa o overhead.
+
+---
+
+## Segurança e modos de aprovação
+
+O `approval_mode` controla o quanto o Gemini pode agir sem confirmação:
+
+| Modo        | Disponibilidade                       | Efeito                                    |
+| ----------- | ------------------------------------- | ----------------------------------------- |
+| `plan`      | sempre                                | apenas planeja (mais seguro)              |
+| `default`   | sempre                                | pede confirmação por ação                 |
+| `auto_edit` | sempre                                | aplica edições de arquivo automaticamente |
+| `yolo`      | **somente com `ALLOW_GEMINI_YOLO=1`** | executa tudo sem confirmação              |
+
+Por padrão o modo **`yolo` está desabilitado**. Se for solicitado sem a variável de ambiente, o
+servidor recusa a execução com erro explícito. Para habilitar conscientemente:
+
+```bash
+# Linux / macOS
+export ALLOW_GEMINI_YOLO=1
+```
+
+```powershell
+# Windows (PowerShell)
+$env:ALLOW_GEMINI_YOLO = "1"
+```
+
+> **Limitação importante — `research` é read-only por política, não por sandbox.**
+> O modo `research` instrui o Gemini a não modificar arquivos e usa `approval_mode=plan`, mas isso
+> é uma **garantia operacional/instrucional**, não um isolamento real de sistema de arquivos. Para
+> evidência objetiva, o servidor compara o estado do `git` antes e depois de cada execução
+> (`git status --porcelain`, `git diff --name-only`, `git diff --stat`) e registra os arquivos
+> realmente criados/modificados/removidos nas métricas.
 
 ---
 
@@ -101,10 +136,10 @@ Cada teste executou a **mesma tarefa** duas vezes (Claude com e sem Gemini), med
 de tokens do Claude. Dados agregados e sanitizados; detalhes em
 [`docs/reports/ab-tests-summary.md`](docs/reports/ab-tests-summary.md).
 
-| Teste | Cenário | Tokens (sem → com) | Economia de tokens | Economia de custo |
-|---|---|---|---:|---:|
-| 1 | Geração de código pequeno | — | **≈15,1%** | **≈0,7%** |
-| 2 | Leitura pesada (app real Next.js, ~100 arquivos, ~1 MB) | 1.183.094 → 137.185 | **≈88,4%** | **≈60,7%** |
+| Teste | Cenário                                                 | Tokens (sem → com)  | Economia de tokens | Economia de custo |
+| ----- | ------------------------------------------------------- | ------------------- | -----------------: | ----------------: |
+| 1     | Geração de código pequeno                               | —                   |         **≈15,1%** |         **≈0,7%** |
+| 2     | Leitura pesada (app real Next.js, ~100 arquivos, ~1 MB) | 1.183.094 → 137.185 |         **≈88,4%** |        **≈60,7%** |
 
 ```mermaid
 xychart-beta
@@ -114,10 +149,19 @@ xychart-beta
     bar [15.1, 88.4]
 ```
 
-### Conclusões dos testes
-- A economia de **≥65% foi validada em leitura pesada**, mas **não em geração pequena de código**.
-- O bridge entrega seu maior valor em **análise, pesquisa, documentação e contexto amplo**.
-- Em tarefas pequenas, prefira manter o trabalho no Claude.
+Valores exatos do Teste 2: Claude **sem** Gemini consumiu **1.183.094 tokens**; **com** Gemini,
+**137.185 tokens**.
+
+### Conclusões dos testes (leitura honesta)
+
+- A **meta de ≥65% de economia de tokens** continua sendo um **objetivo/hipótese** para o uso
+  geral do bridge — **ainda não** uma garantia estatística.
+- A **evidência atual mais forte** está na **leitura pesada de repositório** (Teste 2), onde a
+  economia medida (≈88,4% de tokens / ≈60,7% de custo) **superou a meta** em uma medição pontual.
+- Em **geração pequena de código** o ganho é marginal (≈15,1% de tokens; custo ≈0,7%) — prefira
+  manter o trabalho no Claude.
+- **Amostra ainda pequena** (uma medição por cenário). Trate os números como **indicativos**, não
+  conclusivos; mais execuções são necessárias para consolidar os KPIs.
 
 ---
 
@@ -128,6 +172,11 @@ context-bridge-lab/
 ├── README.md
 ├── LICENSE
 ├── CLAUDE.md                 # Política operacional (lida pelo Claude Code)
+├── package.json              # Tooling do repo (Prettier + scripts de validação)
+├── .editorconfig
+├── .gitattributes            # Normalização de fim de linha (LF/CRLF)
+├── .prettierrc.json
+├── .prettierignore
 ├── .gitignore
 ├── server/                   # Servidor MCP (publicável)
 │   ├── index.js
@@ -139,6 +188,7 @@ context-bridge-lab/
 │   └── health-check.sh
 └── docs/
     ├── ARCHITECTURE.md
+    ├── VALIDATION.md         # Como validar (Windows/Linux) + smoke test
     └── reports/
         └── ab-tests-summary.md
 ```
@@ -150,11 +200,11 @@ context-bridge-lab/
 
 ## Pré-requisitos
 
-| Ferramenta | Versão de referência |
-|---|---|
-| Node.js | 18+ (validado em v22) |
-| Gemini CLI | `npm install -g @google/gemini-cli` (validado em 0.44.x) |
-| Claude Code CLI | validado em 2.1.x |
+| Ferramenta      | Versão de referência                                     |
+| --------------- | -------------------------------------------------------- |
+| Node.js         | 18+ (validado em v22)                                    |
+| Gemini CLI      | `npm install -g @google/gemini-cli` (validado em 0.44.x) |
+| Claude Code CLI | validado em 2.1.x                                        |
 
 Autentique o Gemini uma vez executando `gemini` e confirme o Claude Code com `claude --version`.
 
@@ -166,6 +216,7 @@ Clone o repositório e rode o script de instalação, que instala as dependênci
 registra o MCP no Claude Code (escopo de usuário).
 
 **Windows (PowerShell):**
+
 ```powershell
 git clone <url-do-repositorio> context-bridge-lab
 cd context-bridge-lab
@@ -173,6 +224,7 @@ cd context-bridge-lab
 ```
 
 **Linux / macOS:**
+
 ```bash
 git clone <url-do-repositorio> context-bridge-lab
 cd context-bridge-lab
@@ -181,6 +233,7 @@ chmod +x scripts/*.sh
 ```
 
 ### Registro manual (alternativa)
+
 ```bash
 cd server && npm install && cd ..
 claude mcp add --transport stdio --scope user gemini-bridge -- node "<caminho-do-repo>/server/index.js"
@@ -224,15 +277,21 @@ métrica é gravada automaticamente.
 
 Cada execução do Gemini gera uma linha em `docs/gemini-output/_metrics/gemini-runs.jsonl`:
 
-| Campo | Significado |
-|---|---|
-| `task_id` | Identificador da tarefa |
-| `mode` | `research` ou `development` |
-| `task_type` | Tipo (analysis, research, feature, architecture_review, ...) |
-| `status` | `success` / `partial` / `failed` |
-| `started_at` / `finished_at` / `duration_seconds` | Janela e tempo de execução |
-| `files_created` / `files_modified` | Arquivos tocados pelo Gemini (vazio em research) |
-| `review_required` | Sempre `true` — o Claude revisa antes de aprovar |
+| Campo                                                | Significado                                                                                          |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `task_id`                                            | Identificador da tarefa                                                                              |
+| `mode`                                               | `research` ou `development`                                                                          |
+| `task_type`                                          | Tipo (analysis, research, feature, architecture_review, ...)                                         |
+| `status`                                             | `success` / `partial` / `failed`                                                                     |
+| `started_at` / `finished_at` / `duration_seconds`    | Janela e tempo de execução                                                                           |
+| `files_created` / `files_modified` / `files_deleted` | Arquivos tocados (união da evidência git + briefing)                                                 |
+| `git_evidence`                                       | Evidência real: `git status --porcelain` (antes/depois) + `git diff --name-only` + `git diff --stat` |
+| `files_declared_by_gemini`                           | O que o Gemini _declarou_ ter mudado (complemento, não fonte única)                                  |
+| `review_required`                                    | Sempre `true` — o Claude revisa antes de aprovar                                                     |
+
+As listas de arquivos alterados são derivadas **primeiro da evidência real do git** e só então
+complementadas pelo que o Gemini declarou. Se a pasta não for um repositório git, o servidor cai
+graciosamente para o briefing do Gemini (`git_evidence.available: false`).
 
 Após a revisão, registre o nível de **retrabalho** (`none` … `critical`) em
 `docs/gemini-output/rework-log.md` e atualize `docs/gemini-output/quality-dashboard.md`.
@@ -253,9 +312,10 @@ Após a revisão, registre o nível de **retrabalho** (`none` … `critical`) em
 
 - O MCP **não intercepta** o prompt do usuário: ele só executa quando o Claude chama uma
   ferramenta. A classificação/delegação é responsabilidade do Claude (via `CLAUDE.md`).
-- A economia de **≥65% foi validada apenas em leitura pesada**; em geração de código pequeno o
-  ganho é marginal (~15% em tokens; custo praticamente igual).
+- A meta de **≥65% de economia** é um **objetivo/hipótese**; a evidência forte atual é a leitura
+  pesada (uma medição). Em geração de código pequeno o ganho é marginal (~15% tokens; custo ~igual).
 - Amostra de execuções ainda pequena — KPIs de produtividade não consolidados estatisticamente.
+- O modo `research` é read-only **por política/instrução**, não por sandbox de sistema de arquivos.
 - O retorno do Gemini é uma **hipótese**; depende da revisão do Claude.
 - Windows: o bridge executa o `gemini.js` diretamente via Node (mantendo `shell:false`) para
   evitar `spawn EINVAL` ao chamar `.cmd` no Node 18.20+/20.12+/22+.
@@ -273,21 +333,3 @@ com economia de tokens comprovada no cenário de leitura pesada.
 ## Licença
 
 [MIT](LICENSE).
-
----
-
-## Current Evidence
-
-Dados exatos dos dois testes A/B (consumo de tokens do Claude na mesma tarefa, com e sem Gemini):
-
-| Teste | Tarefa | Métrica | Sem Gemini | Com Gemini | Economia |
-|---|---|---|---:|---:|---:|
-| 1 | Geração de código pequeno | Tokens | — | — | ≈15,1% |
-| 1 | Geração de código pequeno | Custo | — | — | ≈0,7% |
-| 2 | Leitura pesada (app real Next.js, ~100 arquivos, ~1 MB) | Tokens | 1.183.094 | 137.185 | ≈88,4% |
-| 2 | Leitura pesada | Custo | — | — | ≈60,7% |
-
-- **Geração de código pequeno:** economia de tokens ≈15,1%; economia de custo ≈0,7%.
-- **Leitura pesada de repositório:** economia de tokens ≈88,4%; economia de custo ≈60,7%.
-- **Conclusão:** a meta de 65% de economia foi superada em leitura pesada, mas não em geração
-  pequena de código.

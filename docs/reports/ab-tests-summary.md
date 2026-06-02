@@ -27,20 +27,20 @@
 - Tarefa: analisar o repositório e produzir um resumo técnico (arquitetura, módulos, rotas,
   entidades, dependências, riscos).
 
-| Métrica | Sem Gemini | Com Gemini | Economia |
-|---|---:|---:|---:|
-| Tokens do Claude | 1.183.094 | 137.185 | **≈88,4%** |
-| Custo | — | — | **≈60,7%** |
+| Métrica          | Sem Gemini | Com Gemini |   Economia |
+| ---------------- | ---------: | ---------: | ---------: |
+| Tokens do Claude |  1.183.094 |    137.185 | **≈88,4%** |
+| Custo            |          — |          — | **≈60,7%** |
 
 - Conclusão: o bridge é **eficiente para leitura pesada, análise de repositório e contexto amplo**.
   A meta de 65% de economia de tokens foi **superada** neste cenário.
 
 ## Leitura conjunta
 
-| Cenário | Economia de tokens | Economia de custo |
-|---|---:|---:|
-| Geração de código pequeno | ≈15,1% | ≈0,7% |
-| Leitura pesada de repositório | ≈88,4% | ≈60,7% |
+| Cenário                       | Economia de tokens | Economia de custo |
+| ----------------------------- | -----------------: | ----------------: |
+| Geração de código pequeno     |             ≈15,1% |             ≈0,7% |
+| Leitura pesada de repositório |             ≈88,4% |            ≈60,7% |
 
 **Mensagem principal:** o maior valor não é "o Gemini codar tudo", e sim **"o Gemini ler tudo"**.
 O Gemini atua como motor de contexto; o Claude permanece como motor de decisão, revisão e qualidade.

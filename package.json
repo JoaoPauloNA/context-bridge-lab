@@ -1,0 +1,18 @@
+{
+  "name": "context-bridge-lab",
+  "version": "3.1.0",
+  "private": true,
+  "description": "Laboratório MCP de orquestração entre Claude Code CLI e Gemini CLI (Claude decide, Gemini executa, MCP registra).",
+  "license": "MIT",
+  "scripts": {
+    "format": "prettier --write \"**/*.{js,mjs,cjs,json,md}\"",
+    "format:check": "prettier --check \"**/*.{js,mjs,cjs,json,md}\"",
+    "check:node": "node --check server/index.js",
+    "check:sh": "bash -n scripts/install.sh && bash -n scripts/health-check.sh",
+    "check": "npm run check:node",
+    "validate": "npm run format:check && npm run check"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3"
+  }
+}

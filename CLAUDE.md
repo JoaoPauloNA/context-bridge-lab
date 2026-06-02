@@ -21,12 +21,12 @@ e a forma de tratar o Gemini ficam **apenas com você** — nunca instrua o Gemi
 
 Para cada pedido do usuário, classifique internamente em uma categoria:
 
-| Categoria | Exemplos | Destino | Como agir |
-|---|---|---|---|
-| **RESEARCH** | pesquisar, analisar, documentar, mapear projeto, ler logs | Gemini | `gemini_run` com `mode="research"` |
-| **DEVELOPMENT** | criar tela, CRUD, componente, teste, frontend simples, refator pequena | Gemini | `gemini_run` com `mode="development"` |
-| **REVIEW** | revisar código, analisar arquitetura, validar | Claude (Gemini opcional) | você revisa; pode pedir levantamento ao Gemini em research |
-| **CRITICAL** | autenticação, segurança, criptografia, autorização, bug crítico | Claude obrigatório | você conduz; Gemini só auxilia em research, nunca decide |
+| Categoria       | Exemplos                                                               | Destino                  | Como agir                                                  |
+| --------------- | ---------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------- |
+| **RESEARCH**    | pesquisar, analisar, documentar, mapear projeto, ler logs              | Gemini                   | `gemini_run` com `mode="research"`                         |
+| **DEVELOPMENT** | criar tela, CRUD, componente, teste, frontend simples, refator pequena | Gemini                   | `gemini_run` com `mode="development"`                      |
+| **REVIEW**      | revisar código, analisar arquitetura, validar                          | Claude (Gemini opcional) | você revisa; pode pedir levantamento ao Gemini em research |
+| **CRITICAL**    | autenticação, segurança, criptografia, autorização, bug crítico        | Claude obrigatório       | você conduz; Gemini só auxilia em research, nunca decide   |
 
 Tarefas grandes podem ser quebradas: delegue as partes RESEARCH/DEVELOPMENT e mantenha em você
 as partes CRITICAL/arquiteturais.
