@@ -1,9 +1,30 @@
 # Context Bridge Lab — MCP Gemini Bridge
 
+![status: experimental](https://img.shields.io/badge/status-experimental-orange)
+![node: 18+](https://img.shields.io/badge/node-%3E%3D18-339933?logo=node.js&logoColor=white)
+![MCP](https://img.shields.io/badge/protocol-MCP-5A45FF)
+![code style: prettier](https://img.shields.io/badge/code_style-prettier-ff69b4?logo=prettier&logoColor=white)
+![license: MIT](https://img.shields.io/badge/license-MIT-blue)
+
 > Laboratório operacional que integra **Claude Code CLI** e **Gemini CLI** por meio de um
 > servidor **MCP (Model Context Protocol)** local.
 >
 > **Status:** Experimental / Lab — parcialmente validado por testes A/B.
+
+## TL;DR
+
+- **O que é:** um servidor MCP local que deixa o Claude **delegar leitura/pesquisa pesada** ao
+  Gemini e receber de volta apenas um **briefing compacto** — em vez de carregar todo o material
+  bruto no próprio contexto.
+- **Princípio:** **Claude decide. Gemini executa. MCP registra.**
+- **Por que importa:** o maior ganho não é "o Gemini codar tudo", e sim **"o Gemini ler tudo"**.
+- **Evidência (amostra pequena):** em **leitura pesada** de repositório, uma medição A/B mostrou
+  **≈88% menos tokens** do Claude; em **geração de código pequeno**, o ganho foi marginal (~15%).
+  Trate os números como **indicativos**, não como garantia.
+- **Quando usar:** análise de repositório, leitura de logs/docs longos, pesquisa técnica.
+  **Quando não usar:** arquitetura, segurança, bugs críticos — isso fica com o Claude.
+- **Começar:** [Pré-requisitos](#pré-requisitos) → [Instalação](#instalação) →
+  [Health check](#health-check) → [Teste rápido](#teste-rápido).
 
 ## Resumo
 
@@ -172,12 +193,19 @@ context-bridge-lab/
 ├── README.md
 ├── LICENSE
 ├── CLAUDE.md                 # Política operacional (lida pelo Claude Code)
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── CHANGELOG.md
 ├── package.json              # Tooling do repo (Prettier + scripts de validação)
 ├── .editorconfig
 ├── .gitattributes            # Normalização de fim de linha (LF/CRLF)
 ├── .prettierrc.json
 ├── .prettierignore
 ├── .gitignore
+├── .github/                  # CI e templates de issue/PR
+│   ├── workflows/ci.yml
+│   ├── ISSUE_TEMPLATE/
+│   └── pull_request_template.md
 ├── server/                   # Servidor MCP (publicável)
 │   ├── index.js
 │   └── package.json
@@ -329,6 +357,13 @@ final. O fluxo de duas camadas (política no Claude + execução/métricas no MC
 com economia de tokens comprovada no cenário de leitura pesada.
 
 ---
+
+## Contribuição
+
+Contribuições são bem-vindas, dentro do escopo experimental do projeto. Veja
+[`CONTRIBUTING.md`](CONTRIBUTING.md) para o fluxo de validação local e
+[`SECURITY.md`](SECURITY.md) para reporte de vulnerabilidades e cuidados com dados sensíveis.
+O histórico de mudanças fica em [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Licença
 

@@ -44,3 +44,18 @@
 
 **Mensagem principal:** o maior valor não é "o Gemini codar tudo", e sim **"o Gemini ler tudo"**.
 O Gemini atua como motor de contexto; o Claude permanece como motor de decisão, revisão e qualidade.
+
+## Limitações da medição
+
+Estes números são **indicativos**, não conclusivos. Antes de generalizar:
+
+- **Amostra pequena:** uma medição por cenário. Variação entre execuções não foi quantificada.
+- **Dependência de contexto:** os ganhos variam com o tamanho do repositório, o tipo de tarefa e
+  o estado do cache de contexto do Claude no momento da medição.
+- **Custo ≠ tokens:** a economia de custo (≈60,7% no Teste 2) difere da economia de tokens
+  (≈88,4%) porque envolve modelos e preços diferentes entre as duas camadas; trate as duas
+  métricas separadamente.
+- **Sem intervalo de confiança:** a meta de ≥65% de economia segue como **hipótese de trabalho**,
+  não como resultado estatisticamente validado.
+
+Mais execuções, em cenários variados, são necessárias para consolidar os KPIs.

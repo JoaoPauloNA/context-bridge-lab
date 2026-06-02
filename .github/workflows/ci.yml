@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    name: Validate (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install root tooling
+        run: npm install
+
+      - name: Install server dependencies
+        run: npm install
+        working-directory: server
+
+      - name: Prettier check
+        run: npm run format:check
+
+      - name: Check MCP server syntax
+        run: npm run check:node
+
+      # bash is available on ubuntu-latest, so shell scripts are validated here.
+      # Gemini CLI / Claude Code CLI are NOT installed in CI: they require local
+      # authentication and are out of scope for automated checks.
+      - name: Check shell scripts
+        run: npm run check:sh

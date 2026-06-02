@@ -18,12 +18,16 @@ Este documento descreve como validar o repositório em **Windows** e em **Linux/
 # Verifica a sintaxe do servidor MCP
 node --check .\server\index.js
 
-# Roda a checagem agregada do repositório (equivale a check:node)
-npm run check
+# Atalho: formatação (Prettier) + sintaxe do servidor, sem depender de bash
+npm run validate:windows
 
-# Opcional: checagem de formatação (Prettier)
+# Ou rode as etapas separadamente:
 npm run format:check
+npm run check
 ```
+
+> `validate:windows` não valida os scripts shell (`check:sh` exige `bash`). Para isso, use
+> WSL/Git Bash e rode `npm run validate:linux`.
 
 ---
 
@@ -33,18 +37,15 @@ npm run format:check
 # Sintaxe do servidor MCP
 node --check server/index.js
 
-# Sintaxe dos scripts shell
+# Atalho: formatação + sintaxe do servidor + sintaxe dos scripts shell
+npm run validate:linux
+
+# Ou rode as etapas separadamente:
 bash -n scripts/install.sh
 bash -n scripts/health-check.sh
-
-# Checagem agregada do repositório
-npm run check
-
-# Sintaxe dos scripts shell via npm
-npm run check:sh
-
-# Opcional: checagem de formatação (Prettier)
-npm run format:check
+npm run check        # node --check no servidor
+npm run check:sh     # bash -n nos scripts shell
+npm run format:check # Prettier
 ```
 
 ---
@@ -103,3 +104,18 @@ deve ser `true` e `files_created`/`files_modified` devem refletir o `git status`
 - `bash -n` e `npm run check:sh` exigem `bash` (Linux, macOS ou WSL/Git Bash); não rodam em
   PowerShell puro.
 - O smoke test completo depende de Gemini CLI e Claude Code CLI instalados e autenticados.
+
+---
+
+## 5. CI (GitHub Actions)
+
+O workflow [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) reproduz as checagens de
+código a cada `push` em `main` e em cada `pull_request`, no Ubuntu, em Node 18/20/22:
+
+- `npm install` (raiz e `server/`)
+- `npm run format:check`
+- `npm run check:node`
+- `npm run check:sh` (bash disponível no runner Ubuntu)
+
+O CI **não** instala Gemini CLI nem Claude Code CLI: eles dependem de autenticação local e estão
+fora do escopo das checagens automatizadas. O smoke test ponta a ponta continua sendo manual.
